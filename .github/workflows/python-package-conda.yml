@@ -4,9 +4,21 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: python-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUNBUFFERED: "1"
 
     steps:
       - name: Checkout repository
@@ -16,10 +28,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: pip
 
-      - name: Install dependencies
+      - name: Install Qt/OpenGL runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
+          # CPU-only PyTorch: kisebb �s gyorsabb, mint a CUDA-s csomag CI-ben.
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
           pip install pytest flake8
 
@@ -29,4 +59,9 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run tests
-        run: pytest
+        run: |
+          python -m unittest discover -s tests -v
+
+      - name: Verify exported game launcher
+        run: |
+          python -m unittest tests.test_game_export -v
